@@ -1,0 +1,228 @@
+#include <Arduino.h>
+#include "Button.h"
+
+#define BUTTON_PIN GPIO_NUM_4
+
+Button *btn;
+
+// =====================================================
+// TIMING
+// =====================================================
+
+const unsigned long SHORT_MAX = 350;
+const unsigned long MULTI_GAP = 300;
+const unsigned long LONG_TIME = 500;
+
+// =====================================================
+// STATE
+// =====================================================
+
+bool pressed = false;
+bool holdTriggered = false;
+bool secondPress = false;
+
+unsigned long pressStart = 0;
+unsigned long lastRelease = 0;
+
+int clickCount = 0;
+bool waitingForClicks = false;
+
+// =====================================================
+// PRESS DOWN
+// =====================================================
+
+void onPressDown(void *button_handle, void *usr_data) {
+
+  unsigned long now = millis();
+
+  pressed = true;
+  pressStart = now;
+  holdTriggered = false;
+
+  // Is this the second press of click + hold?
+  if (clickCount == 1 &&
+      waitingForClicks &&
+      (now - lastRelease <= MULTI_GAP)) {
+
+    secondPress = true;
+
+    Serial.println("Second press detected...");
+  }
+}
+
+// =====================================================
+// PRESS UP
+// =====================================================
+
+void onPressUp(void *button_handle, void *usr_data) {
+
+  unsigned long now = millis();
+  unsigned long duration = now - pressStart;
+
+  pressed = false;
+
+  // ---------------------------------------------------
+  // If a long gesture was already detected
+  // ---------------------------------------------------
+
+  if (holdTriggered) {
+
+    clickCount = 0;
+    waitingForClicks = false;
+    secondPress = false;
+
+    return;
+  }
+
+  // ---------------------------------------------------
+  // Short press
+  // ---------------------------------------------------
+
+  if (duration < SHORT_MAX) {
+
+    clickCount++;
+    lastRelease = now;
+    waitingForClicks = true;
+
+    return;
+  }
+
+  // ---------------------------------------------------
+  // Normal long press
+  // ---------------------------------------------------
+
+  if (duration >= LONG_TIME) {
+
+    Serial.println(">>> LONG PRESS");
+
+    clickCount = 0;
+    waitingForClicks = false;
+    secondPress = false;
+  }
+}
+
+// =====================================================
+// CHECK FOR HELD GESTURES
+// =====================================================
+
+void processHold() {
+
+  if (!pressed || holdTriggered) {
+    return;
+  }
+
+  unsigned long duration = millis() - pressStart;
+
+  if (duration < LONG_TIME) {
+    return;
+  }
+
+  // ---------------------------------------------------
+  // CLICK + HOLD
+  // ---------------------------------------------------
+
+  if (secondPress) {
+
+    Serial.println(">>> CLICK + HOLD");
+
+  }
+
+  // ---------------------------------------------------
+  // NORMAL LONG PRESS
+  // ---------------------------------------------------
+
+  else {
+
+    Serial.println(">>> LONG PRESS");
+
+  }
+
+  holdTriggered = true;
+}
+
+// =====================================================
+// PROCESS CLICKS
+// =====================================================
+
+void processClicks() {
+
+  if (!waitingForClicks || pressed) {
+    return;
+  }
+
+  if (millis() - lastRelease <= MULTI_GAP) {
+    return;
+  }
+
+  if (clickCount == 1) {
+
+    Serial.println(">>> SINGLE CLICK");
+
+  } else if (clickCount == 2) {
+
+    Serial.println(">>> DOUBLE CLICK");
+
+  } else if (clickCount == 3) {
+
+    Serial.println(">>> TRIPLE CLICK");
+
+  } else {
+
+    Serial.print(">>> ");
+    Serial.print(clickCount);
+    Serial.println(" CLICKS");
+  }
+
+  clickCount = 0;
+  waitingForClicks = false;
+  secondPress = false;
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  Serial.begin(115200);
+  delay(1000);
+
+  Serial.println();
+  Serial.println("========================================");
+  Serial.println("       5-GESTURE BUTTON TEST");
+  Serial.println("========================================");
+  Serial.println();
+
+  Serial.println("1. Single click");
+  Serial.println("2. Double click");
+  Serial.println("3. Triple click");
+  Serial.println("4. Long press");
+  Serial.println("5. Click + hold");
+  Serial.println();
+
+  Serial.println("Timing:");
+  Serial.println("Short click: < 350 ms");
+  Serial.println("Multi-click gap: <= 300 ms");
+  Serial.println("Hold: >= 500 ms");
+  Serial.println();
+
+  btn = new Button(BUTTON_PIN, true);
+
+  btn->attachPressDownEventCb(onPressDown, NULL);
+  btn->attachPressUpEventCb(onPressUp, NULL);
+
+  Serial.println("READY.");
+  Serial.println();
+}
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop() {
+
+  processHold();
+  processClicks();
+
+  delay(5);
+}
